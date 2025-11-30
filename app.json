@@ -3,7 +3,8 @@
     "name": "casino-mobile",
     "slug": "casino-mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
+    "platforms": ["ios", "android", "web"],
     "icon": "./assets/images/icon.png",
     "scheme": "casinomobile",
     "userInterfaceStyle": "automatic",
@@ -37,6 +38,17 @@
           "dark": {
             "backgroundColor": "#000000"
           }
+        }
+      ],
+      [
+        "expo-navigation-bar",
+        {
+          "backgroundColor": "#0f4d0f",
+          "borderColor": "#0f4d0f",
+          "position": "absolute",
+          "visibility": "hidden",
+          "barStyle": "dark-content",
+          "behavior": "overlay"
         }
       ]
     ],
