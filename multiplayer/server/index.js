@@ -328,7 +328,7 @@ io.on('connection', (socket) => {
 
         case 'cancelStagingStack':
           console.log(`[SERVER] Player ${playerIndex} canceling staging stack:`, data.payload);
-          newGameState = handleCancelStagingStack(gameState, data.payload.stackToCancel);
+          newGameState = handleCancelStagingStack(gameState, data.payload.stackToCancel, playerIndex);
           break;
 
     case 'addToOpponentBuild':
@@ -341,11 +341,11 @@ io.on('connection', (socket) => {
       newGameState = handleAddToOwnBuild(gameState, data.payload.draggedItem, data.payload.buildToAddTo, playerIndex);
       break;
 
-        case 'tableCardDrop':
-          console.log(`🎯 Table drop: ${data.payload.draggedCard.rank}${data.payload.draggedCard.suit} → ${data.payload.targetCard.rank}${data.payload.targetCard.suit}`);
-          const { draggedCard: tableDraggedCard, targetCard: tableTargetCard } = data.payload;
-          newGameState = handleTableCardDrop(gameState, tableDraggedCard, tableTargetCard);
-          break;
+    case 'tableCardDrop':
+      console.log(`🎯 Table drop: ${data.payload.draggedCard.rank}${data.payload.draggedCard.suit} → ${data.payload.targetCard.rank}${data.payload.targetCard.suit}`);
+      const { draggedCard: tableDraggedCard, targetCard: tableTargetCard } = data.payload;
+      newGameState = handleTableCardDrop(gameState, tableDraggedCard, tableTargetCard, playerIndex);
+      break;
 
         // ... other action cases remain the same ...
 
@@ -476,7 +476,7 @@ function executeAction(gameState, action, playerIndex) {
       return handleAddToOwnBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo, playerIndex);
     case 'tableCardDrop':
       console.log(`🔧 [EXECUTE_ACTION] Routing to handleTableCardDrop`);
-      return handleTableCardDrop(gameState, action.payload.draggedCard, action.payload.targetCard);
+      return handleTableCardDrop(gameState, action.payload.draggedCard, action.payload.targetCard, playerIndex);
     default:
       console.error(`❌ [EXECUTE_ACTION] Unknown action type: ${action.type}`);
       throw new Error(`Unknown action type: ${action.type}`);

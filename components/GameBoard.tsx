@@ -223,42 +223,61 @@ export function GameBoard({ initialState, playerNumber, sendAction, onRestart, o
   }, [isMyTurn]);
 
   const handleTableCardDragEnd = useCallback((draggedItem: any, dropPosition: any) => {
-    console.log(`[GameBoard] Table card drag end:`, draggedItem, dropPosition);
-    console.log(`[GameBoard] Dragged card: ${draggedItem.card.rank}${draggedItem.card.suit}`);
-    console.log(`[GameBoard] Drop position handled: ${dropPosition.handled}`);
-    console.log(`[GameBoard] Drop position targetType: ${dropPosition.targetType}`);
+    console.log(`🌟 [TableDrag] Table card drag end:`, draggedItem, dropPosition);
+    console.log(`🌟 [TableDrag] Dragged card: ${draggedItem.card.rank}${draggedItem.card.suit}`);
+    console.log(`🌟 [TableDrag] Drop position handled: ${dropPosition.handled}`);
 
     setDraggedCard(null);
     setIsDragging(false);
 
-    // Handle table-to-table drops
+    // Handle table-to-table drops through Phase 2 system
     if (dropPosition.handled) {
-      console.log(`[GameBoard] Table card drop was handled by a zone`);
-      // Check if it was dropped on another table card
+      console.log(`🌟 [TableDrag] Table card drop was handled by a zone`);
+
+      // Route through Phase 2 card-drop event for server-centric handling
       if (dropPosition.targetType === 'loose') {
-        console.log(`[GameBoard] Table card dropped on another table card - sending tableCardDrop action`);
-        console.log(`[GameBoard] Target card: ${dropPosition.targetCard.rank}${dropPosition.targetCard.suit}`);
+        console.log(`🌟 [TableDrag] Table card dropped on loose card - creating temp stack`);
+        console.log(`🌟 [TableDrag] Target card: ${dropPosition.targetCard.rank}${dropPosition.targetCard.suit}`);
 
-        const actionPayload = {
-          type: 'tableCardDrop',
-          payload: {
-            draggedCard: draggedItem.card,
-            targetCard: dropPosition.targetCard
+        // Find target card index for proper server validation
+        const targetIndex = gameState.tableCards.findIndex(card => {
+          // Check if it's a loose card (no type property or type === 'loose')
+          const isLooseCard = 'rank' in card && 'suit' in card && (!('type' in card) || (card as any).type === 'loose');
+          if (isLooseCard) {
+            return (card as any).rank === dropPosition.targetCard.rank &&
+                   (card as any).suit === dropPosition.targetCard.suit;
           }
-        };
+          return false;
+        });
 
-        console.log(`[GameBoard] Sending action:`, actionPayload);
-        sendAction(actionPayload);
-        console.log(`[GameBoard] tableCardDrop action sent successfully`);
+        // Send table-to-table drop through Phase 2 system
+        sendAction({
+          type: 'card-drop',
+          payload: {
+            draggedItem: {
+              card: draggedItem.card,
+              source: 'table',  // This marks it as a table card drop
+              player: playerNumber
+            },
+            targetInfo: {
+              type: 'loose',
+              card: dropPosition.targetCard,
+              index: targetIndex
+            },
+            requestId: Date.now()
+          }
+        });
+
+        console.log(`🌟 [TableDrag] Table-to-table drop sent through Phase 2 system`);
       } else {
-        console.log(`[GameBoard] Drop target type is not 'loose': ${dropPosition.targetType}`);
+        console.log(`🌟 [TableDrag] Drop target type '${dropPosition.targetType}' not handled for table drops`);
       }
       return;
     }
 
     // If not handled by any zone, it's an invalid drop - snap back
-    console.log(`[GameBoard] Table card drop not handled, snapping back`);
-  }, [sendAction]);
+    console.log(`[GameBoard] Table card drop not handled by any zone, snapping back`);
+  }, [sendAction, gameState.tableCards, playerNumber]);
 
   // Register table section as drop zone
   useEffect(() => {

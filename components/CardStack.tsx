@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState, memo } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Card, { CardType } from './card';
 import DraggableCard from './DraggableCard';
 
@@ -19,6 +19,9 @@ interface CardStackProps {
   stackOwner?: number;
   onFinalizeStack?: (stackId: string) => void;
   onCancelStack?: (stackId: string) => void;
+  captureValue?: number; // For temp stacks: shows the value to capture with
+  style?: any; // For custom styles like z-index
+  dragZIndex?: number; // Z-index for dragged cards from this stack
 }
 
 const CardStack = memo<CardStackProps>(({
@@ -36,7 +39,10 @@ const CardStack = memo<CardStackProps>(({
   isTemporaryStack = false,
   stackOwner,
   onFinalizeStack,
-  onCancelStack
+  onCancelStack,
+  captureValue,
+  style,
+  dragZIndex
 }) => {
   const stackRef = useRef<View>(null);
   const [isLayoutMeasured, setIsLayoutMeasured] = useState(false);
@@ -69,7 +75,7 @@ const CardStack = memo<CardStackProps>(({
     );
     (global as any).dropZones.push(dropZone);
 
-    console.log(`[CardStack] Registered drop zone for ${stackId} with bounds:`, dropZoneBounds);
+    console.log(`[CardStack:DEBUG] 📍 Drop zone registered for ${stackId}:`, dropZoneBounds);
 
     return () => {
       // Cleanup drop zone on unmount
@@ -129,16 +135,18 @@ const CardStack = memo<CardStackProps>(({
   const topCard = cards[cards.length - 1];
   const cardCount = cards.length;
 
-  console.log(`[CardStack] Rendering ${stackId}:`, {
+  console.log(`[CardStack:DEBUG] 🧱 Rendering ${stackId}:`, {
     isTemporaryStack,
-    stackOwner,
+    owner: stackOwner,
     currentPlayer,
     cardCount,
-    cards: cards.map(c => `${c.rank}${c.suit}`)
+    hasDraggableCards: cardCount === 1 && draggable,
+    topCard: topCard ? `${topCard.rank}${topCard.suit}` : 'none',
+    containerStyle: 'position:relative, no z-index (avoids stacking context barriers)'  // Debug note
   });
 
   return (
-    <View ref={stackRef} style={styles.stackContainer} onLayout={handleLayout}>
+    <View ref={stackRef} style={[styles.stackContainer, style]} onLayout={handleLayout}>
       {topCard && (
         draggable && cardCount === 1 ? (
           <DraggableCard
@@ -149,6 +157,7 @@ const CardStack = memo<CardStackProps>(({
             currentPlayer={currentPlayer}
             source={dragSource}
             stackId={stackId}
+            dragZIndex={dragZIndex}
           />
         ) : (
           <TouchableOpacity
@@ -174,9 +183,16 @@ const CardStack = memo<CardStackProps>(({
       )}
 
       {/* Card count indicator for stacks with multiple cards */}
-      {cardCount > 1 && (
+      {cardCount > 1 && !isTemporaryStack && (
         <View style={styles.cardCountContainer}>
           <Text style={styles.cardCountText}>{cardCount}</Text>
+        </View>
+      )}
+
+      {/* Capture value indicator for temporary stacks */}
+      {isTemporaryStack && captureValue !== undefined && (
+        <View style={styles.captureValueContainer}>
+          <Text style={styles.captureValueText}>{captureValue}</Text>
         </View>
       )}
 
@@ -210,6 +226,7 @@ const CardStack = memo<CardStackProps>(({
 const styles = StyleSheet.create({
   stackContainer: {
     position: 'relative',
+    // No z-index to avoid stacking conflicts with high-z drag overlays
     alignItems: 'center',
     justifyContent: 'center',
     padding: 4,
@@ -250,6 +267,24 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   cardCountText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  captureValueContainer: {
+    position: 'absolute',
+    bottom: -8,
+    right: -8,  // Opposite corner from card count
+    backgroundColor: '#9C27B0', // Purple
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  captureValueText: {
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: 'bold',

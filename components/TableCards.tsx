@@ -93,6 +93,11 @@ const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, 
         ) : (
           <View style={styles.cardsContainer}>
             {tableCards.map((tableItem, index) => {
+              // Calculate z-index hierarchy: later cards stack higher
+              const baseZIndex = tableCards.length - index; // Reverse index for stacking
+              const dragZIndex = tableCards.length + 1000; // Always higher than any base z-index
+              console.log(`[TableCards:DEBUG] 📚 Z-Index hierarchy for index ${index}: baseZIndex=${baseZIndex}, totalCards=${tableCards.length}, dragZIndex=${dragZIndex}`);
+
               // Handle different table item types using union type helper
               const itemType = getCardType(tableItem);
               if (itemType === 'loose') {
@@ -111,6 +116,8 @@ const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, 
                     onDragStart={onTableCardDragStart}
                     onDragEnd={onTableCardDragEnd}
                     dragSource="table"
+                    style={{ zIndex: baseZIndex }}
+                    dragZIndex={dragZIndex}
                   />
                 );
               } else if (itemType === 'build') {
@@ -127,18 +134,20 @@ const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, 
                     buildValue={buildItem.value}
                     isBuild={true}
                     currentPlayer={currentPlayer}
+                    style={{ zIndex: baseZIndex }}
                   />
                 );
               } else if (itemType === 'temporary_stack') {
                 // Temporary stack - use CardStack with temp stack controls
                 const tempStackItem = tableItem as any; // Type assertion for temp stack
-                const stackId = `temp-${index}`;
+                const stackId = tempStackItem.stackId || `temp-${index}`;
                 const tempStackCards = tempStackItem.cards || [];
                 console.log(`[TableCards] Rendering temp stack:`, {
                   stackId: tempStackItem.stackId || stackId,
                   owner: tempStackItem.owner,
                   currentPlayer,
                   cardCount: tempStackCards.length,
+                  captureValue: tempStackItem.captureValue,  // Show the value to capture with
                   cards: tempStackCards.map((c: any) => `${c.rank}${c.suit}`)
                 });
                 return (
@@ -151,8 +160,11 @@ const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, 
                     currentPlayer={currentPlayer}
                     isTemporaryStack={true}
                     stackOwner={tempStackItem.owner}
+                    captureValue={tempStackItem.captureValue}  // Show capture value instead of card count
                     onFinalizeStack={onFinalizeStack}
                     onCancelStack={onCancelStack}
+                    style={{ zIndex: baseZIndex }}
+                    dragZIndex={dragZIndex}
                   />
                 );
               }

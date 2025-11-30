@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { View, PanResponder, Animated, StyleSheet } from 'react-native';
+import { Animated, PanResponder, StyleSheet } from 'react-native';
 import Card, { CardType } from './card';
 
 interface DraggableCardProps {
@@ -13,6 +13,7 @@ interface DraggableCardProps {
   currentPlayer: number;
   source?: string;
   stackId?: string | null;
+  dragZIndex?: number; // Custom z-index for dragged cards (defaults to 9999)
 }
 
 const DraggableCard: React.FC<DraggableCardProps> = ({
@@ -25,7 +26,8 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
   size = 'normal',
   currentPlayer,
   source = 'hand',
-  stackId = null
+  stackId = null,
+  dragZIndex = 9999
 }) => {
   const pan = useRef(new Animated.ValueXY()).current;
   const [hasStartedDrag, setHasStartedDrag] = useState(false);
@@ -53,7 +55,9 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
 
       if (distance > 8 && !hasStartedDrag) {
         setHasStartedDrag(true);
-        console.log(`[DraggableCard] Started dragging ${card.rank}${card.suit}`);
+        console.log(`[DraggableCard:DEBUG] 🏁 STARTED dragging ${card.rank}${card.suit} from ${source}`);
+        console.log(`[DraggableCard:DEBUG] 📊 Current player: ${currentPlayer}, stackId: ${stackId}`);
+        console.log(`[DraggableCard:DEBUG] 🎨 z-index will be set to: ${dragZIndex} (calculated overlay)`);
 
         // Notify parent component
         if (onDragStart) {
@@ -66,6 +70,11 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
         Animated.event([null, { dx: pan.x, dy: pan.y }], {
           useNativeDriver: false,
         })(event, gestureState);
+
+        // Debug log position every few frames (reduce spam)
+        if (Math.floor(Date.now() / 100) % 5 === 0) { // Every ~500ms
+          console.log(`[DraggableCard:DEBUG] 📍 Drag position: (${gestureState.moveX.toFixed(1)}, ${gestureState.moveY.toFixed(1)})`);
+        }
 
         // Notify parent of drag move
         if (onDragMove) {
@@ -81,6 +90,10 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
         handled: false,
         attempted: false
       };
+
+      // Debug: Check available drop zones
+      console.log(`[DraggableCard:DEBUG] 🎯 Drop position: ${dropPosition.x.toFixed(1)}, ${dropPosition.y.toFixed(1)}`);
+      console.log(`[DraggableCard:DEBUG] 🔍 Available drop zones:`, (global as any).dropZones?.length || 0);
 
       // Check global drop zones
       if ((global as any).dropZones && (global as any).dropZones.length > 0) {
@@ -118,6 +131,8 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
             }
           }
         }
+
+        console.log(`[DraggableCard:DEBUG] 🏆 Best drop zone:`, bestZone?.stackId || 'none');
 
         if (bestZone) {
           dropPosition.attempted = true;
@@ -164,6 +179,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
         onDragEnd(draggedItem, dropPosition);
       }
 
+      console.log(`[DraggableCard:DEBUG] 🛑 DRAG END: ${card.rank}${card.suit}, handled: ${dropPosition.handled}`);
       setHasStartedDrag(false);
     },
 
@@ -178,6 +194,13 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
     }
   });
 
+  // Debug log when drag state changes (only on important state changes)
+  React.useEffect(() => {
+    if (hasStartedDrag) {
+      console.log(`[DraggableCard:DEBUG] 🎯 DRAG START: ${card.rank}${card.suit} now z-index ${dragZIndex} (overlay active)`);
+    }
+  }, [hasStartedDrag, card.rank, card.suit, dragZIndex]);
+
   return (
     <Animated.View
       style={[
@@ -187,7 +210,7 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
             { translateX: pan.x },
             { translateY: pan.y }
           ],
-          zIndex: hasStartedDrag ? 1000 : 1,
+          zIndex: hasStartedDrag ? dragZIndex : 1,
         },
         hasStartedDrag && styles.dragging
       ]}

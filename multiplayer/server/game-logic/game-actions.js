@@ -140,10 +140,41 @@ const handleCreateBuildWithValue = (gameState, stack, buildValue) => {
   return newState;
 };
 
-const handleCancelStagingStack = (gameState, stackToCancel) => {
-  // Stub: return gameState unchanged
-  console.log('handleCancelStagingStack called with:', stackToCancel);
-  return gameState;
+const handleCancelStagingStack = (gameState, stackToCancel, playerIndex) => {
+  console.log(`❌ [TEMP_STACK:CANCEL] Player ${playerIndex} canceling temp stack:`, stackToCancel.stackId);
+
+  // Find the temp stack to cancel
+  const stackIndex = gameState.tableCards.findIndex(card =>
+    card.type === 'temporary_stack' && card.stackId === stackToCancel.stackId
+  );
+
+  if (stackIndex === -1) {
+    console.error(`❌ [TEMP_STACK:CANCEL] Temp stack not found:`, stackToCancel.stackId);
+    return gameState;
+  }
+
+  const tempStack = gameState.tableCards[stackIndex];
+  console.log(`❌ [TEMP_STACK:CANCEL] Found temp stack with ${tempStack.cards.length} cards:`, tempStack.cards.map(c => `${c.rank}${c.suit}`));
+
+  // Remove the temp stack from table
+  const newTableCards = [...gameState.tableCards];
+  newTableCards.splice(stackIndex, 1); // Remove temp stack
+
+  // Add all cards back to the table as loose cards (in reverse order: dragged on top of target)
+  // This gives visual appearance of cards returning to original positions
+  const reversedCards = tempStack.cards.slice().reverse(); // Reverse to maintain drag order
+  reversedCards.forEach(card => {
+    newTableCards.push({ ...card, type: 'loose' });
+  });
+
+  console.log(`❌ [TEMP_STACK:CANCEL] Returned ${reversedCards.length} cards to table as loose cards`);
+  console.log(`📊 [TEMP_STACK:CANCEL] TABLE NOW: ${newTableCards.map(c => c.type === 'loose' ? `${c.rank}${c.suit}` : `${c.type}(${c.owner})`).join(', ')}`);
+
+  return {
+    ...gameState,
+    tableCards: newTableCards
+    // Note: Turn does NOT advance when canceling
+  };
 };
 
 const handleAddToOpponentBuild = (gameState, draggedItem, buildToAddTo, playerIndex) => {
@@ -462,10 +493,64 @@ const handleBuild = (gameState, payload, playerIndex) => {
   return newState;
 };
 
-const handleTableCardDrop = (gameState, draggedCard, targetCard) => {
-  // Stub: return gameState unchanged
-  console.log('handleTableCardDrop called with:', draggedCard, targetCard);
-  return gameState;
+const handleTableCardDrop = (gameState, draggedCard, targetCard, playerIndex) => {
+  console.log(`🌟 [TABLE_DROP] Player ${playerIndex} dropping table card: ${draggedCard.rank}${draggedCard.suit} → ${targetCard.rank}${targetCard.suit}`);
+
+  // Casino rule validation: Players can only have one temp stack at a time
+  const alreadyHasTempStack = gameState.tableCards.some(card =>
+    card.type === 'temporary_stack' && card.owner === playerIndex
+  );
+
+  if (alreadyHasTempStack) {
+    console.error(`❌ [TABLE_DROP] Player ${playerIndex} already has a temp stack - rejecting drop`);
+    return gameState;
+  }
+
+  // Find both cards in the table
+  const draggedIndex = gameState.tableCards.findIndex(card =>
+    (!card.type || card.type === 'loose') &&
+    card.rank === draggedCard.rank &&
+    card.suit === draggedCard.suit
+  );
+
+  const targetIndex = gameState.tableCards.findIndex(card =>
+    (!card.type || card.type === 'loose') &&
+    card.rank === targetCard.rank &&
+    card.suit === targetCard.suit
+  );
+
+  if (draggedIndex === -1 || targetIndex === -1) {
+    console.error(`❌ [TABLE_DROP] Could not find cards in table: dragged=${draggedIndex === -1}, target=${targetIndex === -1}`);
+    return gameState;
+  }
+
+  console.log(`✅ [TABLE_DROP] Creating temp stack: ${targetCard.rank}${targetCard.suit} + ${draggedCard.rank}${draggedCard.suit} = ${targetCard.value + draggedCard.value}`);
+
+  // Create temporary stack object
+  const tempStack = {
+    type: 'temporary_stack',
+    stackId: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    cards: [targetCard, draggedCard], // Target first, then dragged
+    owner: playerIndex,
+    value: targetCard.value + draggedCard.value, // Total sum
+    captureValue: targetCard.value + draggedCard.value, // First build value (same initially)
+    stackControls: true // Enable finalize/cancel buttons
+  };
+
+  // Replace target card with temp stack and remove dragged card
+  const newTableCards = [...gameState.tableCards];
+  newTableCards[targetIndex] = tempStack; // Replace target with stack
+  newTableCards.splice(draggedIndex, 1); // Remove dragged card (adjust index if needed)
+
+  const newGameState = {
+    ...gameState,
+    tableCards: newTableCards
+  };
+
+  console.log(`✅ [TABLE_DROP] Temp stack created successfully - ${newTableCards.length} total table items`);
+  console.log(`📊 [TABLE_DROP] TABLE NOW: ${newTableCards.map(c => c.type === 'temporary_stack' ? `temp(${c.value})` : `${c.rank || 'X'}${c.suit || '?'}`).join(', ')}`);
+
+  return newGameState;
 };
 
 const handleAddToTemporaryCaptureStack = (gameState, card, stack) => {

@@ -167,12 +167,58 @@ function determineActions(draggedItem, targetInfo, gameState) {
   const playerHand = playerHands[currentPlayer];
   const draggedValue = rankValue(draggedCard.rank);
 
-  // DEBUG: Keep source type for debugging card issues
-  if (draggedItem.source !== 'hand') {
+  // Handle different drag sources
+  if (draggedItem.source === 'table') {
+    // ===== TABLE-TO-TABLE DROPS (Phase 3: Temporary Stacks) =====
+    console.log(`[SHARED_LOGIC] Table card drop detected: ${draggedCard.rank}${draggedCard.suit} → ${targetInfo.type}`);
+
+    if (targetInfo.type === 'loose') {
+      // Casino rule: Players can only have one temp stack active at a time
+      const alreadyHasTempStack = tableCards.some(card =>
+        card.type === 'temporary_stack' && card.owner === currentPlayer
+      );
+
+      if (alreadyHasTempStack) {
+        console.error('[SHARED_LOGIC] Player already has a temp stack - rejecting table drop');
+        return {
+          actions: [],
+          requiresModal: false,
+          errorMessage: 'You can only have one staging stack at a time.'
+        };
+      }
+
+      // Create temporary stack action
+      console.log(`[SHARED_LOGIC] Creating temp stack action: ${draggedValue} + ${rankValue(targetInfo.card.rank)}`);
+      actions.push({
+        type: 'tableCardDrop',
+        label: `Create Stack (${draggedValue + rankValue(targetInfo.card.rank)})`,
+        payload: {
+          draggedCard: draggedCard,
+          targetCard: targetInfo.card,
+          player: currentPlayer
+        }
+      });
+
+      // Auto-execute single table drop actions (don't require modal)
+      return {
+        actions,
+        requiresModal: false,
+        errorMessage: null
+      };
+    } else {
+      // Table drop on non-loose targets not supported yet
+      return {
+        actions: [],
+        requiresModal: false,
+        errorMessage: 'Invalid table card drop target'
+      };
+    }
+  } else if (draggedItem.source !== 'hand') {
+    // Unknown drag source
     return {
       actions: [],
       requiresModal: false,
-      errorMessage: 'Only hand cards supported'
+      errorMessage: 'Unsupported drag source'
     };
   }
 
@@ -194,11 +240,14 @@ function determineActions(draggedItem, targetInfo, gameState) {
         payload: { draggedItem, selectedTableCards: [tableCard], targetCard: tableCard }
       });
     } else if (tableCard.type === 'temporary_stack') {
-      const stackValue = calculateCardSum(tableCard.cards || []);
-      if (stackValue === draggedValue) {
+      // Use captureValue for temp stacks (displays the initial build value)
+      // For new temp stacks this is the build value
+      // For extended temp stacks it remains the original capture value
+      const stackCaptureValue = tableCard.captureValue || calculateCardSum(tableCard.cards || []);
+      if (stackCaptureValue === draggedValue) {
         actions.push({
           type: 'capture',
-          label: `Capture Stack (${stackValue})`,
+          label: `Capture Stack (${stackCaptureValue})`,
           payload: { draggedItem, selectedTableCards: [tableCard], targetCard: tableCard }
         });
       }
