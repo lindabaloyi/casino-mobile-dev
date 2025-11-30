@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GameState } from '../multiplayer/server/game-logic/game-state';
-const sharedGameLogic = require('../multiplayer/server/game-logic/shared-game-logic');
 import ActionModal from './ActionModal';
 import BurgerMenu from './BurgerMenu';
 import CapturedCards from './CapturedCards';
@@ -19,9 +18,10 @@ interface GameBoardProps {
   onBackToMenu?: () => void;
   buildOptions?: any;
   onBuildOptionSelected?: (option: any) => void;
+  actionChoices?: any;
 }
 
-export function GameBoard({ initialState, playerNumber, sendAction, onRestart, onBackToMenu, buildOptions }: GameBoardProps) {
+export function GameBoard({ initialState, playerNumber, sendAction, onRestart, onBackToMenu, buildOptions, actionChoices }: GameBoardProps) {
   const [gameState, setGameState] = useState<GameState>(initialState);
   const [draggedCard, setDraggedCard] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -81,6 +81,20 @@ export function GameBoard({ initialState, playerNumber, sendAction, onRestart, o
     }
   }, [buildOptions]);
 
+  // Handle action choices when they arrive (Phase 2: server-centric logic)
+  useEffect(() => {
+    if (actionChoices && actionChoices.actions) {
+      console.log('[GameBoard] Action choices received:', actionChoices);
+
+      setModalInfo({
+        title: 'Choose Your Action',
+        message: 'What would you like to do?',
+        actions: actionChoices.actions,
+        requestId: actionChoices.requestId
+      });
+    }
+  }, [actionChoices]);
+
   // Hide navigation bar when entering game
   useEffect(() => {
     const hideNavBar = async () => {
@@ -117,138 +131,50 @@ export function GameBoard({ initialState, playerNumber, sendAction, onRestart, o
   }, []);
 
   const handleDropOnCard = useCallback((draggedItem: any, targetInfo: any) => {
-    console.log(`[GameBoard] handleDropOnCard called:`, {
-      draggedItem,
-      targetInfo,
+    console.log(`🏆 [GameBoard] Card dropped - START:`, {
+      draggedCard: draggedItem.card.rank + draggedItem.card.suit,
+      source: draggedItem.source,
+      targetType: targetInfo.type,
+      targetArea: targetInfo.area,
       isMyTurn,
-      currentPlayer: gameState.currentPlayer,
-      playerNumber
+      currentPlayer: gameState.currentPlayer
     });
 
     if (!isMyTurn) {
-      console.log(`[GameBoard] Not player's turn - rejecting drop`);
-      setErrorModal({
-        visible: true,
-        title: 'Not Your Turn',
-        message: 'Please wait for your turn.'
-      });
+      setErrorModal({ visible: true, title: 'Not Your Turn', message: 'Please wait for your turn.' });
       return false;
     }
 
-    // NEW AUTOMATIC TEMP STACK LOGIC per PRD
-    if (targetInfo.type === 'loose') {
-      // Automatically create temp stack when dropping hand card on loose card
-      console.log(`[GameBoard] Auto-creating temp stack: hand card ${draggedItem.card.rank}${draggedItem.card.suit} on loose card ${targetInfo.card?.rank}${targetInfo.card?.suit}`);
-
-      // Find target card among loose cards using type guard
-      const targetCard = gameState.tableCards.find(c => {
-        if ('rank' in c && 'suit' in c) {
-          return c.rank === targetInfo.card?.rank && c.suit === targetInfo.card?.suit;
-        }
-        return false;
-      });
-
-      if (targetCard) {
-        // Check if player already has a temp stack using type checks
-        const hasTempStack = gameState.tableCards.some(c => {
-          if ('type' in c && 'owner' in c) {
-            return c.type === 'temporary_stack' && c.owner === playerNumber;
-          }
-          return false;
-        });
-
-        console.log(`[GameBoard] Player ${playerNumber} has temp stack already: ${hasTempStack}`);
-
-        if (!hasTempStack) {
-          console.log(`[GameBoard] Sending createStagingStack action`);
-          sendAction({
-            type: 'createStagingStack',
-            payload: {
-              handCard: draggedItem.card,
-              tableCard: targetCard
-            }
-          });
-          console.log(`[GameBoard] Temp stack creation action sent successfully`);
-          return true;
-        } else {
-          console.log(`[GameBoard] Blocking temp stack creation - already has one`);
-          setErrorModal({
-            visible: true,
-            title: 'Temp Stack Limit',
-            message: 'You can only have one temporary stack at a time.'
-          });
-          return false;
-        }
-      } else {
-        console.log(`[GameBoard] Target card not found in tableCards`);
+    // Send raw drop event to server
+    sendAction({
+      type: 'card-drop',
+      payload: {
+        draggedItem,
+        targetInfo,
+        requestId: Date.now() // For matching responses
       }
-    }
+    });
 
-    // For other drop types, use the existing modal logic
-    console.log(`[GameBoard] Determining actions for drop`);
-
-    // Create compatibility GameState for determineActions function
-    // TODO: Remove this conversion once determineActions is updated to new types
-    const compatGameState = {
-      tableCards: gameState.tableCards.map(card => {
-        if ('type' in card) {
-          // Already properly typed
-          return card;
-        } else {
-          // Convert loose Card to TableCard format
-          return { ...card, type: 'loose' } as any;
-        }
-      }),
-      playerHands: gameState.playerHands,
-      currentPlayer: gameState.currentPlayer,
-      round: gameState.round
-    };
-
-        const result = sharedGameLogic.determineActions(draggedItem, targetInfo, compatGameState);
-
-    if (result.errorMessage) {
-      console.log(`[GameBoard] Action determination error:`, result.errorMessage);
-      setErrorModal({
-        visible: true,
-        title: 'Invalid Move',
-        message: result.errorMessage
-      });
-      return false;
-    }
-
-    if (result.actions.length > 0) {
-      if (result.requiresModal) {
-        // Show modal for multiple choices or strategic decisions
-        console.log(`[GameBoard] Showing modal with ${result.actions.length} actions`);
-        setModalInfo({
-          title: 'Choose Your Action',
-          message: 'What would you like to do?',
-          actions: result.actions
-        });
-        return true;
-      } else {
-        // Execute single automatic action directly
-        console.log(`[GameBoard] Executing automatic action:`, result.actions[0]);
-        sendAction(result.actions[0]);
-        return true;
-      }
-    } else {
-      // No actions possible
-      console.log(`[GameBoard] No actions possible`);
-      setErrorModal({
-        visible: true,
-        title: 'Invalid Move',
-        message: 'No valid actions possible with this card.'
-      });
-      return false;
-    }
-  }, [sendAction, isMyTurn, playerNumber, gameState]);
+    return true;
+  }, [isMyTurn, sendAction]);
 
   const handleModalAction = useCallback((action: any) => {
     console.log(`[GameBoard] Modal action selected:`, action);
-    sendAction(action);
+
+    // Check if this is from actionChoices (server-centric modal) or buildOptions (legacy modal)
+    if (modalInfo?.requestId) {
+      // Phase 2: Action from actionChoices - use execute-action
+      sendAction({
+        type: 'execute-action',
+        payload: action
+      });
+    } else {
+      // Legacy action handling
+      sendAction(action);
+    }
+
     setModalInfo(null);
-  }, [sendAction]);
+  }, [sendAction, modalInfo?.requestId]);
 
   const handleModalCancel = useCallback(() => {
     console.log(`[GameBoard] Modal cancelled`);

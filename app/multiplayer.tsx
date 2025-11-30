@@ -8,7 +8,7 @@ export const options = {
 
 export default function MultiplayerScreen() {
   console.log('[SCREEN] MultiplayerScreen rendered');
-  const { gameState, playerNumber, sendAction, buildOptions, clearBuildOptions } = useSocket();
+  const { gameState, playerNumber, sendAction, buildOptions, clearBuildOptions, actionChoices } = useSocket();
 
   console.log('[SCREEN] gameState:', gameState, 'playerNumber:', playerNumber);
 
@@ -31,6 +31,7 @@ export default function MultiplayerScreen() {
       onRestart={() => console.log('Restart game')}
       onBackToMenu={() => console.log('Back to menu')}
       buildOptions={buildOptions}
+      actionChoices={actionChoices}
     />
   );
 }

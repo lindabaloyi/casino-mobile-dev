@@ -24,6 +24,7 @@ export const useSocket = () => {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [playerNumber, setPlayerNumber] = useState<number | null>(null);
   const [buildOptions, setBuildOptions] = useState<any>(null);
+  const [actionChoices, setActionChoices] = useState<any>(null);
 
   const socketInstance = useMemo(() => {
     console.log("[SOCKET] Creating connection to:", SOCKET_URL);
@@ -104,6 +105,22 @@ export const useSocket = () => {
       setBuildOptions(options);
     });
 
+    socketInstance.on('action-choices', (data: any) => {
+      console.log(`🎛️ [CLIENT] Action choices received from server:`, {
+        requestId: data.requestId,
+        actionCount: data.actions?.length || 0,
+        actions: data.actions?.map((a: any) => ({ type: a.type, label: a.label })) || []
+      });
+      setActionChoices({
+        requestId: data.requestId,
+        actions: data.actions.map((action: any) => ({
+          type: action.type,
+          label: action.label,
+          payload: action.payload
+        }))
+      });
+    });
+
     return () => {
       socketInstance.close();
     };
@@ -111,11 +128,29 @@ export const useSocket = () => {
 
   const sendAction = (action: any) => {
     const timestamp = new Date().toISOString();
-    if (socketInstance) {
+    if (!socketInstance) {
+      console.warn(`[${timestamp}][CLIENT] Attempted to send action but socket is null:`, action);
+      return;
+    }
+
+    // Phase 2: Route actions to appropriate socket events
+    if (action.type === 'card-drop') {
+      console.log(`📤 [CLIENT] Sending card-drop event:`, {
+        draggedCard: action.payload.draggedItem.card.rank + action.payload.draggedItem.card.suit,
+        targetInfo: action.payload.targetInfo,
+        requestId: action.payload.requestId
+      });
+      socketInstance.emit('card-drop', action.payload);
+    } else if (action.type === 'execute-action') {
+      console.log(`🔄 [CLIENT] Sending execute-action:`, {
+        actionType: action.payload.type,
+        payload: action.payload.payload
+      });
+      socketInstance.emit('execute-action', { action: action.payload });
+    } else {
+      // Legacy game-action for existing functionality
       console.log(`[${timestamp}][CLIENT] Sending game-action: ${action.type || 'unknown'}, data:`, action);
       socketInstance.emit('game-action', action);
-    } else {
-      console.warn(`[${timestamp}][CLIENT] Attempted to send action but socket is null:`, action);
     }
   };
 
@@ -123,5 +158,5 @@ export const useSocket = () => {
     setBuildOptions(null);
   };
 
-  return { gameState, playerNumber, sendAction, buildOptions, clearBuildOptions };
+  return { gameState, playerNumber, sendAction, buildOptions, clearBuildOptions, actionChoices };
 };

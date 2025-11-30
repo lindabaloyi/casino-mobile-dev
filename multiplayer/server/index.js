@@ -29,7 +29,7 @@ const {
 } = require('./game-logic/game-actions.js');
 
 // Import shared type-safe functions (maintains JavaScript compatibility)
-const { initializeGame: sharedInitializeGame, validateGameState } = require('./game-logic/shared-game-logic.js');
+const { initializeGame: sharedInitializeGame, validateGameState, determineActions } = require('./game-logic/shared-game-logic.js');
 
 console.log('[SERVER] Imported functions:', {
   handleCreateStagingStack: typeof handleCreateStagingStack,
@@ -369,7 +369,119 @@ io.on('connection', (socket) => {
     console.log(`[SERVER] Broadcasted game-update: currentPlayer=${stateToSend.currentPlayer}, tableCardsCount=${stateToSend.tableCards?.length || 0}`);
     console.log(`[SERVER] Emitted state tableCards:`, stateToSend.tableCards.map(c => c.type ? `${c.type}(${c.owner || 'none'})` : `${c.rank}${c.suit}`));
   });
+
+  // Phase 2: Server-centric card drop handling
+  socket.on('card-drop', (data) => {
+    console.log(`🎯 [CARD_DROP] RECEIVED from socket ${socket.id}:`, {
+      draggedItem: data.draggedItem,
+      targetInfo: data.targetInfo,
+      requestId: data.requestId
+    });
+
+    if (!gameState) {
+      console.error(`❌ [CARD_DROP] No active game state`);
+      return socket.emit('error', { message: 'No active game' });
+    }
+
+    const playerIndex = activeGameSockets.findIndex(p => p.id === socket.id);
+    console.log(`👤 [CARD_DROP] Player index: ${playerIndex}, currentPlayer: ${gameState.currentPlayer}`);
+
+    if (playerIndex !== gameState.currentPlayer) {
+      console.error(`❌ [CARD_DROP] Not player's turn (playerIndex: ${playerIndex}, currentPlayer: ${gameState.currentPlayer})`);
+      return socket.emit('error', { message: "Not your turn" });
+    }
+
+    try {
+      console.log(`🔍 [CARD_DROP] Calling determineActions...`);
+      // Use existing determineActions function from shared-game-logic.js
+      const result = determineActions(data.draggedItem, data.targetInfo, gameState);
+      console.log(`🔍 [CARD_DROP] determineActions result:`, {
+        hasActions: result.actions?.length || 0,
+        requiresModal: result.requiresModal,
+        errorMessage: result.errorMessage
+      });
+
+      if (result.errorMessage) {
+        console.error(`❌ [CARD_DROP] determineActions error: ${result.errorMessage}`);
+        return socket.emit('error', { message: result.errorMessage });
+      }
+
+      if (result.actions.length === 1 && !result.requiresModal) {
+        console.log(`⚡ [CARD_DROP] Single action found: ${result.actions[0].type}`);
+        // Execute single action automatically
+        const newState = executeAction(gameState, result.actions[0], playerIndex);
+        console.log(`✅ [CARD_DROP] Auto-executed ${result.actions[0].type}, updating game state`);
+
+        gameState = newState;
+        io.emit('game-update', gameState);
+
+        console.log(`📡 [CARD_DROP] Emitted game-update, currentPlayer now: ${gameState.currentPlayer}`);
+      } else {
+        console.log(`🎛️ [CARD_DROP] Multiple actions (${result.actions.length}), sending choices to client`);
+        // Send choices to client
+        socket.emit('action-choices', {
+          requestId: data.requestId,
+          actions: result.actions
+        });
+        console.log(`📡 [CARD_DROP] Emitted action-choices for ${result.actions.length} options`);
+      }
+    } catch (error) {
+      console.error(`💥 [CARD_DROP] Unexpected error:`, error);
+      socket.emit('error', { message: 'Invalid move' });
+    }
+  });
+
+  // Handle user's action choice
+  socket.on('execute-action', (data) => {
+    const playerIndex = activeGameSockets.findIndex(p => p.id === socket.id);
+    if (playerIndex !== gameState.currentPlayer) {
+      return socket.emit('error', { message: "Not your turn" });
+    }
+
+    try {
+      const newState = executeAction(gameState, data.action, playerIndex);
+      gameState = newState;
+      io.emit('game-update', gameState);
+    } catch (error) {
+      socket.emit('error', { message: 'Action failed' });
+    }
+  });
 });
+
+// Helper function to execute actions
+function executeAction(gameState, action, playerIndex) {
+  console.log(`🔧 [EXECUTE_ACTION] Executing:`, action.type, `for Player ${playerIndex}`);
+  switch (action.type) {
+    case 'trail':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleTrail with card:`, action.payload.card);
+      // Implement trail logic (move from existing handler)
+      return handleTrail(gameState, action.payload.card, playerIndex);
+    case 'capture':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleCapture`);
+      return handleCapture(gameState, action.payload.draggedItem, action.payload.selectedTableCards, playerIndex);
+    case 'build':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleBuild`);
+      return handleBuild(gameState, action.payload);
+    case 'createStagingStack':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleCreateStagingStack`);
+      return handleCreateStagingStack(gameState, action.payload.handCard, action.payload.tableCard, playerIndex);
+    case 'addToStagingStack':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleAddToStagingStack`);
+      return handleAddToStagingStack(gameState, action.payload.handCard, action.payload.targetStack);
+    case 'addToOpponentBuild':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleAddToOpponentBuild`);
+      return handleAddToOpponentBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo);
+    case 'addToOwnBuild':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleAddToOwnBuild`);
+      return handleAddToOwnBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo);
+    case 'tableCardDrop':
+      console.log(`🔧 [EXECUTE_ACTION] Routing to handleTableCardDrop`);
+      return handleTableCardDrop(gameState, action.payload.draggedCard, action.payload.targetCard);
+    default:
+      console.error(`❌ [EXECUTE_ACTION] Unknown action type: ${action.type}`);
+      throw new Error(`Unknown action type: ${action.type}`);
+  }
+}
 
 
 

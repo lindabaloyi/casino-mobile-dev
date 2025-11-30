@@ -159,16 +159,102 @@ const handleAddToOwnBuild = (gameState, draggedItem, buildToAddTo) => {
   return gameState;
 };
 
-const handleCapture = (gameState, draggedItem, selectedTableCards, opponentCard = null) => {
-  // Stub: return gameState unchanged
-  console.log('handleCapture called with:', draggedItem, selectedTableCards, opponentCard);
-  return gameState;
+const handleCapture = (gameState, draggedItem, selectedTableCards, playerIndex) => {
+  console.log(`🎣 [CAPTURE] Player ${playerIndex} capturing:`);
+  console.log(`🎣 [CAPTURE] Hand card: ${draggedItem.card.rank}${draggedItem.card.suit}`);
+  console.log(`🎣 [CAPTURE] Table cards: ${selectedTableCards.map(c => `${c.rank}${c.suit}`).join(', ')}`);
+
+  // Find and remove hand card from player's hand
+  const playerHand = gameState.playerHands[playerIndex];
+  const handCardIndex = playerHand.findIndex(c =>
+    c.rank === draggedItem.card.rank && c.suit === draggedItem.card.suit
+  );
+
+  if (handCardIndex === -1) {
+    console.error(`❌ [CAPTURE] ERROR: Hand card ${draggedItem.card.rank}${draggedItem.card.suit} not found in Player ${playerIndex}'s hand`);
+    return gameState;
+  }
+
+  // Remove hand card
+  const capturedHandCard = playerHand.splice(handCardIndex, 1)[0];
+  console.log(`🎣 [CAPTURE] Removed ${capturedHandCard.rank}${capturedHandCard.suit} from Player ${playerIndex}'s hand`);
+
+  // Create list of all cards being captured (hand card + table cards)
+  const allCapturedCards = [capturedHandCard, ...selectedTableCards];
+  console.log(`🎣 [CAPTURE] Capturing ${allCapturedCards.length} total cards: ${allCapturedCards.map(c => `${c.rank}${c.suit}`).join(', ')}`);
+
+  // Remove table cards from table
+  let updatedTableCards = [...gameState.tableCards];
+  selectedTableCards.forEach(tableCard => {
+    const tableCardIndex = updatedTableCards.findIndex(tc =>
+      tc.rank === tableCard.rank && tc.suit === tableCard.suit
+    );
+    if (tableCardIndex !== -1) {
+      updatedTableCards.splice(tableCardIndex, 1);
+      console.log(`🎣 [CAPTURE] Removed ${tableCard.rank}${tableCard.suit} from table`);
+    }
+  });
+
+  // Add captured cards to player's captures
+  const updatedPlayerCaptures = [...gameState.playerCaptures];
+  updatedPlayerCaptures[playerIndex] = [
+    ...gameState.playerCaptures[playerIndex],
+    ...allCapturedCards
+  ];
+
+  console.log(`🎣 [CAPTURE] Added ${allCapturedCards.length} cards to Player ${playerIndex}'s captures`);
+  console.log(`🎣 [CAPTURE] Player ${playerIndex} now has ${updatedPlayerCaptures[playerIndex].length} captured cards total`);
+
+  // Create updated game state
+  const newGameState = {
+    ...gameState,
+    playerHands: gameState.playerHands.map((hand, idx) =>
+      idx === playerIndex ? [...playerHand] : hand
+    ),
+    tableCards: updatedTableCards,
+    playerCaptures: updatedPlayerCaptures,
+    currentPlayer: (gameState.currentPlayer + 1) % 2
+  };
+
+  console.log(`🎣 [CAPTURE] COMPLETE: Player ${playerIndex}'s capture successful, turn advanced to Player ${newGameState.currentPlayer}`);
+  console.log(`🎣 [CAPTURE] TABLE NOW: ${newGameState.tableCards.map(c => c.type === 'loose' ? `${c.rank}${c.suit}` : `${c.type}(${c.owner})`).join(', ')}`);
+
+  return newGameState;
 };
 
-const handleTrail = (gameState, card) => {
-  // Stub: return gameState unchanged
-  console.log('handleTrail called with:', card);
-  return gameState;
+const handleTrail = (gameState, card, playerIndex) => {
+  console.log(`🛤️ [TRAIL] Player ${playerIndex} trailing: ${card.rank}${card.suit}`);
+
+  // Find and remove card from player's hand
+  const playerHand = gameState.playerHands[playerIndex];
+  const cardIndex = playerHand.findIndex(c =>
+    c.rank === card.rank && c.suit === card.suit
+  );
+
+  if (cardIndex === -1) {
+    console.error(`❌ [TRAIL] ERROR: Card ${card.rank}${card.suit} not found in Player ${playerIndex}'s hand`);
+    // In a real implementation, we'd throw or emit error, but for now return unchanged
+    return gameState;
+  }
+
+  // Remove card from hand and add to table as loose card
+  const trailedCard = playerHand.splice(cardIndex, 1)[0];
+  console.log(`🛤️ [TRAIL] SUCCESS: Removed ${trailedCard.rank}${trailedCard.suit} from Player ${playerIndex}'s hand`);
+
+  // Create new game state
+  const newGameState = {
+    ...gameState,
+    playerHands: gameState.playerHands.map((hand, idx) =>
+      idx === playerIndex ? [...playerHand] : hand
+    ),
+    tableCards: [...gameState.tableCards, { ...trailedCard, type: 'loose' }],
+    currentPlayer: (gameState.currentPlayer + 1) % 2
+  };
+
+  console.log(`🛤️ [TRAIL] COMPLETE: Card ${trailedCard.rank}${trailedCard.suit} moved to table, turn advanced to Player ${newGameState.currentPlayer}`);
+  console.log(`🛤️ [TRAIL] TABLE NOW: ${newGameState.tableCards.map(c => c.type === 'loose' ? `${c.rank}${c.suit}` : `${c.type}(${c.owner})`).join(', ')}`);
+
+  return newGameState;
 };
 
 const handleBuild = (gameState, payload) => {
