@@ -295,9 +295,19 @@ const handleCapture = (gameState, draggedItem, selectedTableCards, playerIndex) 
   const capturedHandCard = playerHand.splice(handCardIndex, 1)[0];
   console.log(`🎣 [CAPTURE] Removed ${capturedHandCard.rank}${capturedHandCard.suit} from Player ${playerIndex}'s hand`);
 
-  // Create list of all cards being captured (hand card + table cards)
-  const allCapturedCards = [capturedHandCard, ...selectedTableCards];
-  console.log(`🎣 [CAPTURE] Capturing ${allCapturedCards.length} total cards: ${allCapturedCards.map(c => `${c.rank}${c.suit}`).join(', ')}`);
+  // Flatten selectedTableCards: expand builds/stacks into their constituent cards
+  const flattenedTableCards = selectedTableCards.flatMap(tableCard => {
+    if (tableCard.type === 'build' || tableCard.type === 'temporary_stack') {
+      console.log(`🎣 [CAPTURE] Expanding ${tableCard.type}(${tableCard.value}) into ${tableCard.cards.length} individual cards`);
+      return tableCard.cards; // Return the individual cards that make up the build/stack
+    }
+    return [tableCard]; // Keep loose cards as-is
+  });
+
+  // Create list of all cards being captured (table cards + hand card ON TOP)
+  // Hand card goes "on top" meaning it appears last for visual representation
+  const allCapturedCards = [...flattenedTableCards, capturedHandCard];
+  console.log(`🎣 [CAPTURE] Capturing ${allCapturedCards.length} total cards: ${allCapturedCards.map(c => `${c.rank}${c.suit}`).join(', ')} (hand card on top)`);
 
   // Remove table cards from table
   let updatedTableCards = [...gameState.tableCards];
