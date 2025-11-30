@@ -22,6 +22,9 @@ function getCardType(card: TableCard): 'loose' | 'temporary_stack' | 'build' {
   return 'loose';  // Card objects are implicitly loose cards without type property
 }
 
+// Store last drop position for contact validation
+let lastDropPosition = null;
+
 const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, currentPlayer, onFinalizeStack, onCancelStack, onTableCardDragStart, onTableCardDragEnd }) => {
   const tableRef = useRef<View>(null);
 
@@ -40,12 +43,16 @@ const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, 
         // Check if this is a table-to-table drop
         if (draggedItem.source === 'table') {
           console.log(`🎯 Table-to-table drop: ${draggedItem.card.rank}${draggedItem.card.suit} → ${looseCard.rank}${looseCard.suit}`);
-          // For table-to-table drops, we don't call onDropOnCard
-          // Instead, we return a special result that will be handled by the drag end
+
+          // For table-to-table drops, mark as handled but requiring server validation
+          // This ensures the drop is handled (no snap-back) but goes through determineActions
+          console.log(`🎯 [TableDrop:DEBUG] Table zone detected - marking for server validation`);
+
           return {
-            handled: true,
+            tableZoneDetected: true,
             targetType: 'loose',
-            targetCard: looseCard
+            targetCard: looseCard,
+            draggedItem
           };
         } else {
           // Normal hand-to-table drop
@@ -104,6 +111,21 @@ const TableCards: React.FC<TableCardsProps> = ({ tableCards = [], onDropOnCard, 
                 // Loose card - use CardStack for drop zone
                 const looseCard = tableItem as Card; // Type assertion for loose card
                 const stackId = `loose-${index}`;
+
+                // Get card bounds for contact validation (store globally for drop validation)
+                const cardBounds = {
+                  stackId,
+                  index,
+                  // These will be calculated by CardStack measurement
+                  bounds: null as any
+                };
+
+                // Store card bounds globally for contact validation
+                if (!(global as any).cardBounds) {
+                  (global as any).cardBounds = {};
+                }
+                (global as any).cardBounds[stackId] = cardBounds;
+
                 return (
                   <CardStack
                     key={`table-card-${index}-${looseCard.rank}-${looseCard.suit}`}

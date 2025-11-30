@@ -234,49 +234,56 @@ export function GameBoard({ initialState, playerNumber, sendAction, onRestart, o
     if (dropPosition.handled) {
       console.log(`🌟 [TableDrag] Table card drop was handled by a zone`);
 
-      // Route through Phase 2 card-drop event for server-centric handling
-      if (dropPosition.targetType === 'loose') {
-        console.log(`🌟 [TableDrag] Table card dropped on loose card - creating temp stack`);
-        console.log(`🌟 [TableDrag] Target card: ${dropPosition.targetCard.rank}${dropPosition.targetCard.suit}`);
+      // Check if this drop needs server validation (table zone detected but contact not validated)
+      if (dropPosition.needsServerValidation) {
+        console.log(`🌟 [TableDrag] Table card drop needs server validation - routing through Phase 2`);
 
-        // Find target card index for proper server validation
-        const targetIndex = gameState.tableCards.findIndex(card => {
-          // Check if it's a loose card (no type property or type === 'loose')
-          const isLooseCard = 'rank' in card && 'suit' in card && (!('type' in card) || (card as any).type === 'loose');
-          if (isLooseCard) {
-            return (card as any).rank === dropPosition.targetCard.rank &&
-                   (card as any).suit === dropPosition.targetCard.suit;
-          }
-          return false;
-        });
+        // Route through Phase 2 card-drop event for server-centric validation
+        if (dropPosition.targetType === 'loose') {
+          console.log(`🌟 [TableDrag] Table card dropped near loose card - validating with server`);
+          console.log(`🌟 [TableDrag] Target card: ${dropPosition.targetCard.rank}${dropPosition.targetCard.suit}`);
 
-        // Send table-to-table drop through Phase 2 system
-        sendAction({
-          type: 'card-drop',
-          payload: {
-            draggedItem: {
-              card: draggedItem.card,
-              source: 'table',  // This marks it as a table card drop
-              player: playerNumber
-            },
-            targetInfo: {
-              type: 'loose',
-              card: dropPosition.targetCard,
-              index: targetIndex
-            },
-            requestId: Date.now()
-          }
-        });
+          // Find target card index for proper server validation
+          const targetIndex = gameState.tableCards.findIndex(card => {
+            // Check if it's a loose card (no type property or type === 'loose')
+            const isLooseCard = 'rank' in card && 'suit' in card && (!('type' in card) || (card as any).type === 'loose');
+            if (isLooseCard) {
+              return (card as any).rank === dropPosition.targetCard.rank &&
+                     (card as any).suit === dropPosition.targetCard.suit;
+            }
+            return false;
+          });
 
-        console.log(`🌟 [TableDrag] Table-to-table drop sent through Phase 2 system`);
-      } else {
-        console.log(`🌟 [TableDrag] Drop target type '${dropPosition.targetType}' not handled for table drops`);
+          // Send through Phase 2 system for validation
+          sendAction({
+            type: 'card-drop',
+            payload: {
+              draggedItem: {
+                card: draggedItem.card,
+                source: 'table',
+                player: playerNumber
+              },
+              targetInfo: {
+                type: 'loose',
+                card: dropPosition.targetCard,
+                index: targetIndex
+              },
+              requestId: Date.now()
+            }
+          });
+
+          console.log(`🌟 [TableDrag] Table-to-table validation sent through Phase 2 system`);
+          return;
+        }
       }
+
+      // For fully validated drops (contactValidated = true), no server routing needed
+      console.log(`🌟 [TableDrag] Table card drop was fully validated - no server routing needed`);
       return;
     }
 
     // If not handled by any zone, it's an invalid drop - snap back
-    console.log(`[GameBoard] Table card drop not handled by any zone, snapping back`);
+    console.log(`[GameBoard] Table card drop not handled by any zone - snapping back`);
   }, [sendAction, gameState.tableCards, playerNumber]);
 
   // Register table section as drop zone

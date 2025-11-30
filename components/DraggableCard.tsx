@@ -91,6 +91,9 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
         attempted: false
       };
 
+      // Store drop position globally for contact validation
+      (global as any).lastDropPosition = dropPosition;
+
       // Debug: Check available drop zones
       console.log(`[DraggableCard:DEBUG] 🎯 Drop position: ${dropPosition.x.toFixed(1)}, ${dropPosition.y.toFixed(1)}`);
       console.log(`[DraggableCard:DEBUG] 🔍 Available drop zones:`, (global as any).dropZones?.length || 0);
@@ -146,23 +149,64 @@ const DraggableCard: React.FC<DraggableCardProps> = ({
           const dropResult = bestZone.onDrop(draggedItem);
 
           if (dropResult) {
-            dropPosition.handled = true;
+            // SPECIAL CASE: Table cards need contact validation
+            if (source === 'table') {
+              // Table cards: check for contact validation or proximity-based validation
+              console.log(`[DraggableCard:DEBUG] Table card drop - checking validation`);
+              if (typeof dropResult === 'object') {
+                if (dropResult.contactValidated === true) {
+                  dropPosition.handled = true;
+                  dropPosition.targetType = dropResult.targetType;
+                  dropPosition.targetCard = dropResult.targetCard;
+                  console.log(`[DraggableCard:DEBUG] Table card contact validated - handling drop`);
+                } else if (dropResult.tableZoneDetected === true) {
+                  // Table zone detected but no contact - still handle but mark for validation
+                  dropPosition.handled = true;
+                  dropPosition.targetType = dropResult.targetType;
+                  dropPosition.targetCard = dropResult.targetCard;
+                  dropPosition.needsServerValidation = true; // New flag
+                  console.log(`[DraggableCard:DEBUG] Table card zone detected - needs server validation`);
+                } else {
+                  console.log(`[DraggableCard:DEBUG] Table card drop not validated - will trigger snap-back`);
+                }
+              } else {
+                console.log(`[DraggableCard:DEBUG] Table card drop returned non-object - will trigger snap-back`);
+              }
+            } else {
+              // Regular hand card drops - mark as handled normally
+              dropPosition.handled = true;
 
-            // Check if dropResult is an object with additional info (for table-to-table drops)
-            if (typeof dropResult === 'object' && dropResult.targetType) {
-              dropPosition.targetType = dropResult.targetType;
-              dropPosition.targetCard = dropResult.targetCard;
+              // Check if dropResult is an object with additional info
+              if (typeof dropResult === 'object' && dropResult.targetType) {
+                dropPosition.targetType = dropResult.targetType;
+                dropPosition.targetCard = dropResult.targetCard;
+              }
             }
           }
         }
       }
 
-      // Animate back if not handled
-      if (!dropPosition.handled && (source !== 'hand' || dropPosition.attempted)) {
-        Animated.spring(pan, {
-          toValue: { x: 0, y: 0 },
-          useNativeDriver: false,
-        }).start();
+      // Animate back if not handled, with special logic for table cards
+      if (!dropPosition.handled) {
+        if (source !== 'hand') {
+          // Table cards ALWAYS snap back to original position when not handled
+          // This prevents cards from staying in random positions on table
+          console.log(`[DraggableCard:DEBUG] 🏠 Table card ${card.rank}${card.suit} snapping back to aligned position`);
+          Animated.spring(pan, {
+            toValue: { x: 0, y: 0 },
+            useNativeDriver: false,
+          }).start();
+        } else {
+          // Hand cards snap back only if drop was attempted but failed
+          // (attempted=true means valid drop zones existed but none accepted)
+          if (dropPosition.attempted) {
+            console.log(`[DraggableCard:DEBUG] 🏠 Hand card ${card.rank}${card.suit} attempted drop failed, snapping back`);
+            Animated.spring(pan, {
+              toValue: { x: 0, y: 0 },
+              useNativeDriver: false,
+            }).start();
+          }
+        }
       }
 
       // Reset pan offset
