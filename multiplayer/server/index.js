@@ -331,15 +331,15 @@ io.on('connection', (socket) => {
           newGameState = handleCancelStagingStack(gameState, data.payload.stackToCancel);
           break;
 
-        case 'addToOpponentBuild':
-          console.log(`[SERVER] Player ${playerIndex} adding to opponent build:`, data.payload);
-          newGameState = handleAddToOpponentBuild(gameState, data.payload.draggedItem, data.payload.buildToAddTo);
-          break;
+    case 'addToOpponentBuild':
+      console.log(`[SERVER] Player ${playerIndex} adding to opponent build:`, data.payload);
+      newGameState = handleAddToOpponentBuild(gameState, data.payload.draggedItem, data.payload.buildToAddTo, playerIndex);
+      break;
 
-        case 'addToOwnBuild':
-          console.log(`[SERVER] Player ${playerIndex} adding to own build:`, data.payload);
-          newGameState = handleAddToOwnBuild(gameState, data.payload.draggedItem, data.payload.buildToAddTo);
-          break;
+    case 'addToOwnBuild':
+      console.log(`[SERVER] Player ${playerIndex} adding to own build:`, data.payload);
+      newGameState = handleAddToOwnBuild(gameState, data.payload.draggedItem, data.payload.buildToAddTo, playerIndex);
+      break;
 
         case 'tableCardDrop':
           console.log(`🎯 Table drop: ${data.payload.draggedCard.rank}${data.payload.draggedCard.suit} → ${data.payload.targetCard.rank}${data.payload.targetCard.suit}`);
@@ -461,7 +461,7 @@ function executeAction(gameState, action, playerIndex) {
       return handleCapture(gameState, action.payload.draggedItem, action.payload.selectedTableCards, playerIndex);
     case 'build':
       console.log(`🔧 [EXECUTE_ACTION] Routing to handleBuild`);
-      return handleBuild(gameState, action.payload);
+      return handleBuild(gameState, action.payload, playerIndex);
     case 'createStagingStack':
       console.log(`🔧 [EXECUTE_ACTION] Routing to handleCreateStagingStack`);
       return handleCreateStagingStack(gameState, action.payload.handCard, action.payload.tableCard, playerIndex);
@@ -470,10 +470,10 @@ function executeAction(gameState, action, playerIndex) {
       return handleAddToStagingStack(gameState, action.payload.handCard, action.payload.targetStack);
     case 'addToOpponentBuild':
       console.log(`🔧 [EXECUTE_ACTION] Routing to handleAddToOpponentBuild`);
-      return handleAddToOpponentBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo);
+      return handleAddToOpponentBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo, playerIndex);
     case 'addToOwnBuild':
       console.log(`🔧 [EXECUTE_ACTION] Routing to handleAddToOwnBuild`);
-      return handleAddToOwnBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo);
+      return handleAddToOwnBuild(gameState, action.payload.draggedItem, action.payload.buildToAddTo, playerIndex);
     case 'tableCardDrop':
       console.log(`🔧 [EXECUTE_ACTION] Routing to handleTableCardDrop`);
       return handleTableCardDrop(gameState, action.payload.draggedCard, action.payload.targetCard);

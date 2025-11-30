@@ -1,15 +1,15 @@
 // Stub implementations for game actions
 // These will be replaced with actual implementations
 
-const handleCreateStagingStack = (gameState, handCard, tableCard) => {
-  console.log(`📦 [STAGING_STACK:CREATE] INITIATED: ${handCard.rank}${handCard.suit}(P${gameState.currentPlayer}) → ${tableCard.rank}${tableCard.suit}`);
-  console.log(`📦 [STAGING_STACK:CREATE] CURRENT_STATE: P${gameState.currentPlayer} turn, ${gameState.tableCards.length} table cards`);
+const handleCreateStagingStack = (gameState, handCard, tableCard, playerIndex) => {
+  console.log(`📦 [STAGING_STACK:CREATE] Player ${playerIndex} attempting to create staging stack: ${handCard.rank}${handCard.suit} + ${tableCard.rank}${tableCard.suit}`);
 
-  // Find which player owns the hand card FIRST (using playerIndex from socket lookup)
+  // Validate hand card exists in player's hand
   const handExists = gameState.playerHands[playerIndex].some(card =>
     card.rank === handCard.rank && card.suit === handCard.suit
   );
 
+  // Validate table card exists as loose card
   const tableExists = gameState.tableCards.some(card =>
     !card.type && card.rank === tableCard.rank && card.suit === tableCard.suit
   );
@@ -18,12 +18,9 @@ const handleCreateStagingStack = (gameState, handCard, tableCard) => {
   console.log(`📦 [STAGING_STACK] VALIDATION: Table has ${tableCard.rank}${tableCard.suit}: ${tableExists}`);
 
   if (!handExists || !tableExists) {
-    console.error('📦 [STAGING_STACK] ❌ Card validation failed');
-    console.error(`📦 [STAGING_STACK] ❌ FAILED: handExists=${handExists}, tableExists=${tableExists}, playerIndex=${playerIndex}`);
+    console.error(`❌ [STAGING_STACK] Validation failed - handExists: ${handExists}, tableExists: ${tableExists}`);
     return gameState;
   }
-
-  console.log('📦 [STAGING_STACK] ✅ Card validation passed - proceeding');
 
   // Check that player doesn't already have a staging stack
   const hasStagingStack = gameState.tableCards.some(card =>
@@ -31,9 +28,11 @@ const handleCreateStagingStack = (gameState, handCard, tableCard) => {
   );
 
   if (hasStagingStack) {
-    console.error('📦 [STAGING_STACK] ❌ Player already has a staging stack');
+    console.error(`❌ [STAGING_STACK] Player ${playerIndex} already has a staging stack`);
     return gameState;
   }
+
+  console.log(`✅ [STAGING_STACK] Creating staging stack for Player ${playerIndex} (${handCard.value} + ${tableCard.value} = ${handCard.value + tableCard.value})`);
 
   // Create staging stack
   const stagingStack = {
@@ -45,33 +44,33 @@ const handleCreateStagingStack = (gameState, handCard, tableCard) => {
     ],
     owner: playerIndex,
     value: handCard.value + tableCard.value,
-    possibleBuilds: [handCard.value + tableCard.value] // Basic build option
+    possibleBuilds: [handCard.value + tableCard.value]
   };
 
-  // Remove cards from hand and table
+  // Create updated game state
   const newState = {
     ...gameState,
-    playerHands: [...gameState.playerHands],
-    tableCards: [...gameState.tableCards]
+    playerHands: gameState.playerHands.map((hand, idx) =>
+      idx === playerIndex ? hand.filter(card =>
+        !(card.rank === handCard.rank && card.suit === handCard.suit)
+      ) : hand
+    ),
+    tableCards: [...gameState.tableCards, stagingStack] // Add staging stack
   };
 
-  newState.playerHands[playerIndex] = gameState.playerHands[playerIndex].filter(card =>
-    !(card.rank === handCard.rank && card.suit === handCard.suit)
-  );
-
-  // Remove table card
-  const tableIndex = gameState.tableCards.findIndex(card =>
+  // Remove table card from tableCards
+  const tableIndex = newState.tableCards.findIndex(card =>
     !card.type && card.rank === tableCard.rank && card.suit === tableCard.suit
   );
 
   if (tableIndex !== -1) {
-    newState.tableCards.splice(tableIndex, 1);
-    newState.tableCards.push(stagingStack);
+    newState.tableCards.splice(tableIndex, 1); // Remove loose table card
+    newState.tableCards.push(stagingStack); // Add staging stack
   }
 
-  // DO NOT advance turn yet - staging stacks require user interaction
+  console.log(`✅ [STAGING_STACK] SUCCESS: Created staging stack for Player ${playerIndex}, ${newState.tableCards.length} total table cards`);
+  console.log(`📊 [STAGING_STACK] TABLE NOW: ${newState.tableCards.map(c => c.type === 'temporary_stack' ? `temp(${c.value})` : `${c.rank}${c.suit}`).join(', ')}`);
 
-  console.log(`📦 [STAGING_STACK] ✅ Created staging stack (${stagingStack.value}) owned by Player${playerIndex + 1}`);
   return newState;
 };
 
@@ -147,16 +146,133 @@ const handleCancelStagingStack = (gameState, stackToCancel) => {
   return gameState;
 };
 
-const handleAddToOpponentBuild = (gameState, draggedItem, buildToAddTo) => {
-  // Stub: return gameState unchanged
-  console.log('handleAddToOpponentBuild called with:', draggedItem, buildToAddTo);
-  return gameState;
+const handleAddToOpponentBuild = (gameState, draggedItem, buildToAddTo, playerIndex) => {
+  console.log(`🔄 [BUILD_EXTEND] Player ${playerIndex} extending opponent build:`);
+  console.log(`🔄 [BUILD_EXTEND] Adding ${draggedItem.card.rank}${draggedItem.card.suit} to opponent build(${buildToAddTo.value})`);
+
+  // Validate hand card exists
+  const handExists = gameState.playerHands[playerIndex].some(card =>
+    card.rank === draggedItem.card.rank && card.suit === draggedItem.card.suit
+  );
+
+  if (!handExists) {
+    console.error(`❌ [BUILD_EXTEND] Hand card not found in Player ${playerIndex}'s hand`);
+    return gameState;
+  }
+
+  // Validate build exists and belongs to opponent
+  const buildIndex = gameState.tableCards.findIndex(card =>
+    card.type === 'build' && card.buildId === buildToAddTo.buildId && card.owner !== playerIndex
+  );
+
+  if (buildIndex === -1) {
+    console.error(`❌ [BUILD_EXTEND] Opponent build not found or belongs to player`);
+    return gameState;
+  }
+
+  // Validate build is extendable (should be checked by determineActions, but double-check)
+  if (!buildToAddTo.isExtendable) {
+    console.error(`❌ [BUILD_EXTEND] Build is not extendable`);
+    return gameState;
+  }
+
+  const newBuildValue = buildToAddTo.value + draggedItem.card.value;
+
+  // Casino rule: builds cannot exceed 10
+  if (newBuildValue > 10) {
+    console.error(`❌ [BUILD_EXTEND] Build value would exceed 10 (${buildToAddTo.value} + ${draggedItem.card.value} = ${newBuildValue})`);
+    return gameState;
+  }
+
+  console.log(`✅ [BUILD_EXTEND] Extending build ${buildToAddTo.value} → ${newBuildValue}`);
+
+  // Create updated build
+  const extendedBuild = {
+    ...buildToAddTo,
+    value: newBuildValue,
+    cards: [...buildToAddTo.cards, draggedItem.card],
+    // Builds remain extendable after opponent extends them (per casino rules)
+    isExtendable: true
+  };
+
+  // Update game state
+  const newState = {
+    ...gameState,
+    playerHands: gameState.playerHands.map((hand, idx) =>
+      idx === playerIndex ? hand.filter(card =>
+        !(card.rank === draggedItem.card.rank && card.suit === draggedItem.card.suit)
+      ) : hand
+    ),
+    tableCards: gameState.tableCards.map((card, idx) =>
+      idx === buildIndex ? extendedBuild : card
+    ),
+    currentPlayer: (gameState.currentPlayer + 1) % 2
+  };
+
+  console.log(`✅ [BUILD_EXTEND] SUCCESS: Opponent build extended to ${newBuildValue}, turn advanced to Player ${newState.currentPlayer}`);
+  console.log(`📊 [BUILD_EXTEND] TABLE NOW: ${newState.tableCards.map(c => c.type === 'build' ? `Build(${c.value}, owner:${c.owner})` : `${c.rank}${c.suit}`).join(', ')}`);
+
+  return newState;
 };
 
-const handleAddToOwnBuild = (gameState, draggedItem, buildToAddTo) => {
-  // Stub: return gameState unchanged
-  console.log('handleAddToOwnBuild called with:', draggedItem, buildToAddTo);
-  return gameState;
+const handleAddToOwnBuild = (gameState, draggedItem, buildToAddTo, playerIndex) => {
+  console.log(`🔄 [BUILD_EXTEND] Player ${playerIndex} adding to their own build:`);
+  console.log(`🔄 [BUILD_EXTEND] Adding ${draggedItem.card.rank}${draggedItem.card.suit} to own build(${buildToAddTo.value})`);
+
+  // Validate hand card exists
+  const handExists = gameState.playerHands[playerIndex].some(card =>
+    card.rank === draggedItem.card.rank && card.suit === draggedItem.card.suit
+  );
+
+  if (!handExists) {
+    console.error(`❌ [BUILD_EXTEND] Hand card not found in Player ${playerIndex}'s hand`);
+    return gameState;
+  }
+
+  // Validate build exists and belongs to player
+  const buildIndex = gameState.tableCards.findIndex(card =>
+    card.type === 'build' && card.buildId === buildToAddTo.buildId && card.owner === playerIndex
+  );
+
+  if (buildIndex === -1) {
+    console.error(`❌ [BUILD_EXTEND] Own build not found or doesn't belong to player`);
+    return gameState;
+  }
+
+  // Casino rule: builds cannot exceed 10
+  const newBuildValue = buildToAddTo.value + draggedItem.card.value;
+  if (newBuildValue > 10) {
+    console.error(`❌ [BUILD_EXTEND] Build value would exceed 10 (${buildToAddTo.value} + ${draggedItem.card.value} = ${newBuildValue})`);
+    return gameState;
+  }
+
+  console.log(`✅ [BUILD_EXTEND] Extending own build ${buildToAddTo.value} → ${newBuildValue}`);
+
+  // Update build
+  const extendedBuild = {
+    ...buildToAddTo,
+    value: newBuildValue,
+    cards: [...buildToAddTo.cards, draggedItem.card]
+  };
+
+  // Update game state
+  const newState = {
+    ...gameState,
+    playerHands: gameState.playerHands.map((hand, idx) =>
+      idx === playerIndex ? hand.filter(card =>
+        !(card.rank === draggedItem.card.rank && card.suit === draggedItem.card.suit)
+      ) : hand
+    ),
+    tableCards: gameState.tableCards.map((card, idx) =>
+      idx === buildIndex ? extendedBuild : card
+    ),
+    currentPlayer: (gameState.currentPlayer + 1) % 2
+  };
+
+  console.log(`✅ [BUILD_EXTEND] SUCCESS: Own build extended to ${newBuildValue}, turn advanced to Player ${newState.currentPlayer}`);
+  console.log(`📊 [BUILD_EXTEND] TABLE NOW: ${newState.tableCards.map(c => c.type === 'build' ? `Build(${c.value}, owner:${c.owner})` : `${c.rank}${c.suit}`).join(', ')}`);
+
+  return newState;
 };
 
 const handleCapture = (gameState, draggedItem, selectedTableCards, playerIndex) => {
@@ -257,22 +373,34 @@ const handleTrail = (gameState, card, playerIndex) => {
   return newGameState;
 };
 
-const handleBuild = (gameState, payload) => {
+const handleBuild = (gameState, payload, playerIndex) => {
   console.log('🏗️ [BUILD_ACTION] handleBuild called with:', JSON.stringify(payload, null, 2));
 
   const { draggedItem, tableCardsInBuild, buildValue, biggerCard, smallerCard } = payload;
-  const { card: handCard, player } = draggedItem;
+  const { card: handCard } = draggedItem;
+
+  console.log(`🏗️ [BUILD_ACTION] Executing for Player ${playerIndex} build(${buildValue})`);
 
   // Validation
-  if (!gameState.playerHands[player].some(c => c.rank === handCard.rank && c.suit === handCard.suit)) {
-    console.error('❌ [BUILD_ACTION] Hand card not found');
+  if (!gameState.playerHands[playerIndex].some(c => c.rank === handCard.rank && c.suit === handCard.suit)) {
+    console.error(`❌ [BUILD_ACTION] Hand card ${handCard.rank}${handCard.suit} not found in Player ${playerIndex}'s hand`);
+    console.log(`📊 [BUILD_ACTION] Player ${playerIndex}'s hand:`, gameState.playerHands[playerIndex]?.map(c => `${c.rank}${c.suit}`));
     return gameState;
   }
 
-  if (!gameState.tableCards.some(c => !c.type && c.rank === tableCardsInBuild[0]?.rank && c.suit === tableCardsInBuild[0]?.suit)) {
-    console.error('❌ [BUILD_ACTION] Table card not found');
+  console.log(`✅ [BUILD_ACTION] Hand card ${handCard.rank}${handCard.suit} found in Player ${playerIndex}'s hand`);
+
+  // Find the table card - loose cards can have type: "loose" or no type property
+  const tableCardExists = gameState.tableCards.some(c => (!c.type || c.type === 'loose') && c.rank === tableCardsInBuild[0]?.rank && c.suit === tableCardsInBuild[0]?.suit);
+  console.log(`📊 [BUILD_ACTION] Looking for table card: ${tableCardsInBuild[0]?.rank}${tableCardsInBuild[0]?.suit} (loose)`);
+  console.log(`📊 [BUILD_ACTION] Current table cards:`, gameState.tableCards.map(c => c.type ? `${c.type}(${c.value})` : `${c.rank}${c.suit}`));
+
+  if (!tableCardExists) {
+    console.error(`❌ [BUILD_ACTION] Table card ${tableCardsInBuild[0]?.rank}${tableCardsInBuild[0]?.suit} not found on table`);
     return gameState;
   }
+
+  console.log(`✅ [BUILD_ACTION] Table card ${tableCardsInBuild[0]?.rank}${tableCardsInBuild[0]?.suit} found`);
 
   console.log(`✅ [BUILD_ACTION] Creating build(${buildValue}) from ${handCard.rank}${handCard.suit} + ${tableCardsInBuild[0]?.rank}${tableCardsInBuild[0]?.suit}`);
 
@@ -282,36 +410,45 @@ const handleBuild = (gameState, payload) => {
     buildId: `build-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     cards: [biggerCard, smallerCard],
     value: buildValue,
-    owner: player,
+    owner: playerIndex,
     isExtendable: true
   };
+
+  console.log(`🏗️ [BUILD_ACTION] Created build object: ${build.type}(${build.value}) owned by Player ${build.owner}`);
 
   // Atomic state update
   const newState = {
     ...gameState,
-    playerHands: [...gameState.playerHands],
-    tableCards: [...gameState.tableCards]
+    playerHands: gameState.playerHands.map((hand, idx) =>
+      idx === playerIndex ? hand.filter(card =>
+        !(card.rank === handCard.rank && card.suit === handCard.suit)
+      ) : hand
+    ),
+    tableCards: [...gameState.tableCards] // Start with copy
   };
 
-  // Remove hand card
-  newState.playerHands[player] = gameState.playerHands[player].filter(card =>
-    !(card.rank === handCard.rank && card.suit === handCard.suit)
-  );
+  console.log(`🏗️ [BUILD_ACTION] Removed ${handCard.rank}${handCard.suit} from Player ${playerIndex}'s hand`);
 
   // Remove table card and add build
-  const tableIndex = gameState.tableCards.findIndex(card =>
-    !card.type && card.rank === tableCardsInBuild[0]?.rank && card.suit === tableCardsInBuild[0]?.suit
+  const tableIndex = newState.tableCards.findIndex(card =>
+    (!card.type || card.type === 'loose') && card.rank === tableCardsInBuild[0]?.rank && card.suit === tableCardsInBuild[0]?.suit
   );
 
   if (tableIndex !== -1) {
-    newState.tableCards.splice(tableIndex, 1);
-    newState.tableCards.push(build);
+    newState.tableCards.splice(tableIndex, 1); // Remove table card
+    newState.tableCards.push(build); // Add new build
+    console.log(`🏗️ [BUILD_ACTION] Removed table card ${tableCardsInBuild[0]?.rank}${tableCardsInBuild[0]?.suit} and added build`);
+  } else {
+    console.error(`❌ [BUILD_ACTION] Failed to find table card for removal - this shouldn't happen!`);
+    return gameState; // Safety return
   }
 
   // Advance turn
   newState.currentPlayer = (gameState.currentPlayer + 1) % 2;
 
-  console.log(`✅ [BUILD_ACTION] Build(${buildValue}) created, turn advanced to Player${newState.currentPlayer + 1}`);
+  console.log(`✅ [BUILD_ACTION] SUCCESS: Build(${buildValue}) created, turn advanced to Player ${newState.currentPlayer}`);
+  console.log(`📊 [BUILD_ACTION] TABLE NOW: ${newState.tableCards.map(c => c.type ? `${c.type}(${c.value})` : `${c.rank}${c.suit}`).join(', ')}`);
+
   return newState;
 };
 
